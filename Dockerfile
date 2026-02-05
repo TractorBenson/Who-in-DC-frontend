@@ -1,6 +1,6 @@
-# Multi-stage build for Next.js static export served by NGINX
+# Multi-stage build for Next.js (server-rendered)
 
-########## 1) Build stage (Next.js export) ###################################
+########## 1) Build stage ###################################
 FROM node:20-alpine AS build
 WORKDIR /app
 
@@ -15,27 +15,23 @@ RUN --mount=type=cache,target=/root/.npm npm ci --prefer-offline
 # Copy the rest of the source
 COPY . .
 
-# Build static export (Next.js with output: 'export') to /app/out
+# Build production bundle
 RUN npm run build
 
 
-########## 2) Runtime stage (NGINX static) ###################################
-FROM nginx:1.27-alpine
+########## 2) Runtime stage ###################################
+FROM node:20-alpine
+WORKDIR /app
 
-# Provide nginx config (expects /healthz route). Replace if you have your own.
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Copy exported static files
-COPY --from=build /app/out /usr/share/nginx/html
+COPY --from=build /app/package*.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/.next ./.next
+COPY --from=build /app/public ./public
+COPY --from=build /app/next.config.ts ./next.config.ts
 
-# Optionally run as non-root:
-# USER 101:101
+EXPOSE 3000
 
-EXPOSE 80
-
-
-
-# Notes:
-# - If you keep dynamic Next.js features, use `next start` instead of export and skip nginx.
-# - Adjust Node version if you pin elsewhere.
-# - Ensure .dockerignore excludes node_modules, .next, out, etc., to keep image lean.
+CMD ["npm", "run", "start"]
