@@ -1,0 +1,118 @@
+# ============================
+# CI/CD PIPELINE (Drone)
+# Pattern: Host-git + Compose
+# ============================
+# What this does:
+# 1) Sync the repo into the runner host at /opt/repo/<repo_name>  (persistent)
+# 2) Build a Docker image from this repo and push it to GHCR
+# 3) Deploy using the host's docker-compose.yml in /opt/repo/<repo_name>
+#
+# PREREQS (Ops):
+# - Drone runner is the machine that has Docker; it must mount:
+#     - /var/run/docker.sock   (so steps can talk to host Docker)
+#     - /opt/repo              (where we keep deploy copies)
+#   Example runner compose:
+#     volumes:
+#       - /var/run/docker.sock:/var/run/docker.sock
+#       - /opt/repo:/opt/repo
+# - Secrets set in Drone repo settings:
+#     GHCR_USERNAME = <github username or org>
+#     GHCR_TOKEN    = <PAT with read:packages, write:packages, repo>
+# - docker-compose.yml exists on host at /opt/repo/<repo_name> and references
+#   the SAME image name this pipeline pushes (see notes near the deploy step).
+
+kind: pipeline
+type: docker
+name: build_and_deploy
+
+trigger:
+  event: [ push ]            # CHANGE if you also want tag/release builds
+  branch: [ main ]           # CHANGE to your default branch
+
+# Host paths on the RUNNER machine (not the Drone server, unless same box)
+volumes:
+  - name: docker_sock
+    host:
+      path: /var/run/docker.sock
+  - name: repo_root
+    host:
+      path: /opt/repo        # CHANGE if you prefer /srv or another path
+
+steps:
+  # 1) Sync the repo into the host folder: /opt/repo/<repo_name_lowercase>
+  - name: sync-host-repo
+    image: alpine:3.20
+    volumes:
+      - name: repo_root
+        path: /opt/repo
+    environment:
+      REPO_DIR: "/opt/repo/${DRONE_REPO_NAME,,}"   # repo name lowercased
+    commands:
+      - apk add --no-cache git
+      # Get the repo remote URL from the Drone workspace clone
+      - REMOTE_URL="$(git -C $DRONE_WORKSPACE config --get remote.origin.url)"
+      - mkdir -p "$REPO_DIR"
+      # First time: clone; afterwards: fetch/reset to target branch
+      - >
+        if [ ! -d "$REPO_DIR/.git" ]; then
+          git clone --depth=1 "$REMOTE_URL" "$REPO_DIR";
+        else
+          git -C "$REPO_DIR" remote set-url origin "$REMOTE_URL" || true;
+          git -C "$REPO_DIR" fetch --all --prune;
+          git -C "$REPO_DIR" reset --hard "origin/${DRONE_BRANCH}";
+        fi
+      # Optional: pin to the exact commit being built
+      - git -C "$REPO_DIR" checkout -qf "${DRONE_COMMIT_SHA}" || true
+
+  # 2) Build & push image to GHCR from THIS repo
+  - name: build-push-ghcr
+    image: plugins/docker
+    environment:
+      DOCKER_BUILDKIT: 1     # enables RUN --mount=type=cache if your Dockerfile uses it
+    settings:
+      registry: ghcr.io
+      # NOTE: GHCR repo paths must be lowercase. These vars enforce lowercase.
+      # RESULT: ghcr.io/<owner_lower>/<repo_lower>:<tag>
+      repo: ghcr.io/${DRONE_REPO_OWNER,,}/${DRONE_REPO_NAME,,}  # CHANGE if you want a suffix like -frontend
+      tags:
+        - latest
+        - ${DRONE_COMMIT_SHA}    # immutable tag for rollbacks
+      dockerfile: Dockerfile      # CHANGE if your Dockerfile is in a subfolder
+      context: .                  # CHANGE to that subfolder as well (e.g., frontend)
+      username:
+        from_secret: GHCR_USERNAME
+      password:
+        from_secret: GHCR_TOKEN
+
+  # 3) Deploy using the host compose file in /opt/repo/<repo_name>/
+  - name: deploy
+    image: docker:27-cli
+    volumes:
+      - name: docker_sock
+        path: /var/run/docker.sock
+      - name: repo_root
+        path: /opt/repo
+    environment:
+      REPO_DIR: "/opt/repo/${DRONE_REPO_NAME,,}"   # path to host copy of repo
+      GHCR_USERNAME:
+        from_secret: GHCR_USERNAME
+      GHCR_TOKEN:
+        from_secret: GHCR_TOKEN
+      TAG: "latest"            # CHANGE to "${DRONE_COMMIT_SHA}" for pinned deploys
+      COMPOSE_SUBDIR: ""       # CHANGE if your compose lives in a subfolder (e.g., "deploy")
+    commands:
+      # Auth to GHCR so compose can pull private images
+      - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+      # Allow compose to read ${TAG} from environment
+      - export TAG
+
+      # If your compose is in a subdir, cd into it
+      - cd "$REPO_DIR/${COMPOSE_SUBDIR}"
+
+      # IMPORTANT: Make sure your docker-compose.yml image matches build step:
+      #   image: ghcr.io/<owner_lower>/<repo_lower>:${TAG:-latest}
+      #
+      # Pull & (re)create containers
+      - docker compose pull
+      - docker compose up -d

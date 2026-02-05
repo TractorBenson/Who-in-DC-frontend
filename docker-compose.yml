@@ -1,0 +1,19 @@
+version: "3.9"   # Compose file format (3.9 works with Docker Compose v2)
+
+services:
+  frontend:
+    # The image pushed by your CI/CD pipeline (must match .drone.yml build repo)
+    # IMPORTANT: GHCR requires lowercase image names.
+    # CHANGE `yourorg` → your GitHub org/user
+    # CHANGE `<repo_name>` → your repo name (or with -frontend suffix)
+    # Keep the tag part as ${TAG:-latest} so you can override with `TAG=<sha> docker compose up -d`
+    image: ghcr.io/tractorbenson/who-in-dc-frontend:${TAG:-latest}
+
+    ports:
+      # host_port:container_port
+      # Default here is "80:80" → serve on http://<server-ip>:80
+      # CHANGE left side if host port is occupied (e.g., "3006:80")
+      - "3010:80"
+
+    restart: unless-stopped
+    # Ensures container is auto-restarted if it crashes or the daemon restarts.
