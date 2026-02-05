@@ -18,6 +18,8 @@ async function fetchPeople(): Promise<Person[]> {
   }
 }
 
+const TORONTO_TZ = "America/Toronto";
+
 function formatTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {
@@ -26,6 +28,7 @@ function formatTime(iso: string): string {
   return new Intl.DateTimeFormat("en-US", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: TORONTO_TZ,
   }).format(date);
 }
 
@@ -36,6 +39,7 @@ export default async function Home() {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: TORONTO_TZ,
   }).format(new Date());
 
   return (
