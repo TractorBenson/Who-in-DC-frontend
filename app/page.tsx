@@ -32,6 +32,7 @@ type HeatmapResponse = {
   bucket: "day";
   generated_at: string;
   cells: HeatmapCell[];
+  day_details: Record<string, { name: string; duration_minutes: number }[]>;
   summary: {
     hottest_slot: string | null;
     avg_online: number;
@@ -65,19 +66,20 @@ function formatDuration(minutes: number): string {
   return `${h}h ${m}m`;
 }
 
-function getHeatColor(value: number, maxValue: number): string {
-  if (value <= 0 || maxValue <= 0) return "bg-slate-100";
-  const ratio = value / maxValue;
-  if (ratio < 0.25) return "bg-green-300";
-  if (ratio < 0.5) return "bg-yellow-300";
-  if (ratio < 0.75) return "bg-orange-400";
-  return "bg-red-500";
+function getHeatColor(value: number): string {
+  const clamped = Math.max(0, Math.min(value, 12));
+  const ratio = clamped / 12;
+  const red = Math.round(167 + (248 - 167) * ratio);
+  const green = Math.round(243 + (180 - 243) * ratio);
+  const blue = Math.round(208 + (180 - 208) * ratio);
+  return `rgb(${red} ${green} ${blue})`;
 }
 
 export default function Home() {
   const [people, setPeople] = useState<Person[]>([]);
   const [leaderboardRange, setLeaderboardRange] = useState<"today" | "week" | "month">("today");
   const [heatmapMonth, setHeatmapMonth] = useState(CURRENT_MONTH);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardResponse | null>(null);
   const [heatmap, setHeatmap] = useState<HeatmapResponse | null>(null);
   const [error, setError] = useState("");
@@ -111,11 +113,6 @@ export default function Home() {
     timeZone: TORONTO_TZ,
   }).format(new Date());
 
-  const maxHeatValue = useMemo(
-    () => Math.max(...((heatmap?.cells ?? []).map((cell) => cell.value) ?? [0])),
-    [heatmap],
-  );
-
   const dailyHeat = useMemo(() => {
     const values = (heatmap?.cells ?? []).reduce<Record<string, number>>((acc, cell) => {
       acc[cell.date] = cell.value;
@@ -130,9 +127,13 @@ export default function Home() {
   }, [heatmap, heatmapMonth]);
 
   const firstDayOffset = dailyHeat.length > 0 ? new Date(`${heatmapMonth}-01T00:00:00`).getDay() : 0;
-  const busiestDay = dailyHeat.reduce<{ date: string; value: number } | null>(
-    (best, day) => (day.value > 0 && (!best || day.value > best.value) ? day : best),
-    null,
+  const selectedDay = dailyHeat.find((day) => day.date === selectedDate) ?? null;
+  const selectedDayDetails = selectedDate ? heatmap?.day_details?.[selectedDate] ?? [] : [];
+  const activeCount = people.length;
+
+  const monthOptions = useMemo(
+    () => [...new Set([heatmapMonth, ...(heatmap?.available_months ?? [CURRENT_MONTH])])],
+    [heatmap?.available_months, heatmapMonth],
   );
 
   return (
@@ -148,7 +149,12 @@ export default function Home() {
         ) : null}
 
         <section className="rounded-3xl border border-black/10 bg-white/80 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.6)] backdrop-blur">
-          <h2 className="mb-4 text-xl font-semibold text-black">Current Presence</h2>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold text-black">Current Presence</h2>
+            <div className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+              {activeCount} people in DC
+            </div>
+          </div>
           {people.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-black/15 bg-white/60 p-6 text-center text-black/60">
               No one is currently marked as inside.
@@ -216,17 +222,12 @@ export default function Home() {
               onChange={(e) => setHeatmapMonth(e.target.value)}
               className="rounded-lg border border-black/15 bg-white px-3 py-1 text-sm text-black"
             >
-              {[...new Set([heatmapMonth, ...(heatmap?.available_months ?? [CURRENT_MONTH])])].map((month) => (
+              {monthOptions.map((month) => (
                 <option key={month} value={month}>
                   {month}
                 </option>
               ))}
             </select>
-          </div>
-          <div className="mb-4 rounded-xl bg-black/5 px-4 py-3 text-sm text-black/70">
-            {busiestDay
-              ? `Busiest day: ${busiestDay.date} • Avg hours/person ${busiestDay.value.toFixed(2)}`
-              : "Heatmap will appear when data accumulates."}
           </div>
           <div className="overflow-auto rounded-2xl border border-black/10 bg-white p-4">
             <div className="grid min-w-[760px] grid-cols-7 gap-2 text-xs">
@@ -239,17 +240,46 @@ export default function Home() {
                 <div key={`blank-${idx}`} className="h-20 rounded-md bg-transparent" />
               ))}
               {dailyHeat.map((day) => (
-                <div
+                <button
+                  type="button"
                   key={day.date}
                   title={`${day.date} • ${day.value.toFixed(2)} avg hours/person`}
-                  className={`flex h-20 flex-col justify-between rounded-md border border-black/5 p-2 ${getHeatColor(day.value, maxHeatValue)}`}
+                  onClick={() => setSelectedDate((prev) => (prev === day.date ? null : day.date))}
+                  className={`flex h-20 flex-col justify-between rounded-md border p-2 text-left ${
+                    selectedDate === day.date ? "border-black/30" : "border-black/5"
+                  }`}
+                  style={{ backgroundColor: getHeatColor(day.value) }}
                 >
                   <span className="text-xs font-semibold text-black/80">{day.date.slice(-2)}</span>
                   <span className="text-[11px] text-black/70">{day.value.toFixed(2)}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
+          {selectedDay ? (
+            <div className="mt-4 rounded-xl border border-black/10 bg-white px-4 py-3 text-sm text-black/80">
+              <div className="font-semibold">{selectedDay.date}</div>
+              <div>Avg hours/person: {selectedDay.value.toFixed(2)}</div>
+              <div className="mt-3 overflow-hidden rounded-lg border border-black/10">
+                <div className="grid grid-cols-2 border-b border-black/10 bg-black/5 px-3 py-2 text-xs font-semibold text-black/70">
+                  <span>Name</span>
+                  <span>Duration</span>
+                </div>
+                <div className="divide-y divide-black/5">
+                  {selectedDayDetails.length === 0 ? (
+                    <div className="px-3 py-3 text-xs text-black/60">No one stayed in DC on this day.</div>
+                  ) : (
+                    selectedDayDetails.map((row) => (
+                      <div key={`${selectedDay.date}-${row.name}`} className="grid grid-cols-2 px-3 py-2 text-sm">
+                        <span>{row.name}</span>
+                        <span>{formatDuration(row.duration_minutes)}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </section>
       </main>
     </div>
