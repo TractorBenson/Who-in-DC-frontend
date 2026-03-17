@@ -114,7 +114,7 @@ export default function Home() {
     const daysInMonth = new Date(year, month, 0).getDate();
     return Array.from({ length: daysInMonth }, (_, i) => {
       const date = `${heatmapMonth}-${String(i + 1).padStart(2, "0")}`;
-      const dayValue = values[date] ?? { value: 0, color: "#b7ebc0" };
+      const dayValue = values[date] ?? { value: 0, color: "#d3d3d3" };
       return { date, value: Number(dayValue.value.toFixed(2)), color: dayValue.color };
     });
   }, [heatmap, heatmapMonth]);
