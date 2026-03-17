@@ -127,6 +127,10 @@ export default function Home() {
   }, [heatmap, heatmapMonth]);
 
   const firstDayOffset = dailyHeat.length > 0 ? new Date(`${heatmapMonth}-01T00:00:00`).getDay() : 0;
+  const sortedPeople = useMemo(
+    () => [...people].sort((a, b) => new Date(a.entered_at).getTime() - new Date(b.entered_at).getTime()),
+    [people],
+  );
   const selectedDay = dailyHeat.find((day) => day.date === selectedDate) ?? null;
   const selectedDayDetails = selectedDate ? heatmap?.day_details?.[selectedDate] ?? [] : [];
   const activeCount = people.length;
@@ -166,7 +170,7 @@ export default function Home() {
                 <span>Entered</span>
               </div>
               <div className="divide-y divide-black/5">
-                {people.map((person) => (
+                {sortedPeople.map((person) => (
                   <div key={`${person.name}-${person.entered_at}`} className="grid grid-cols-2 px-5 py-4 text-base text-black">
                     <span>{person.name}</span>
                     <span className="text-black/60">{formatTime(person.entered_at)}</span>
