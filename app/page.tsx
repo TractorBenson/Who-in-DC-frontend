@@ -62,11 +62,10 @@ function formatDuration(minutes: number): string {
 function getHeatColor(value: number, maxValue: number): string {
   if (value <= 0 || maxValue <= 0) return "bg-slate-100";
   const ratio = value / maxValue;
-  if (ratio < 0.2) return "bg-indigo-100";
-  if (ratio < 0.4) return "bg-indigo-200";
-  if (ratio < 0.6) return "bg-indigo-300";
-  if (ratio < 0.8) return "bg-indigo-400";
-  return "bg-indigo-500";
+  if (ratio < 0.25) return "bg-green-300";
+  if (ratio < 0.5) return "bg-yellow-300";
+  if (ratio < 0.75) return "bg-orange-400";
+  return "bg-red-500";
 }
 
 export default function Home() {
@@ -192,22 +191,20 @@ export default function Home() {
             {myCard ? `Current #1: ${myCard.name} • ${formatDuration(myCard.duration_minutes)}` : "No leaderboard data yet."}
           </div>
           <div className="overflow-hidden rounded-2xl border border-black/10 bg-white">
-            <div className="grid grid-cols-4 border-b border-black/10 bg-black/5 px-5 py-3 text-sm font-semibold text-black/70">
+            <div className="grid grid-cols-3 border-b border-black/10 bg-black/5 px-5 py-3 text-sm font-semibold text-black/70">
               <span>Rank</span>
               <span>Name</span>
               <span>Duration</span>
-              <span>Gap</span>
             </div>
             <div className="divide-y divide-black/5">
               {(leaderboard?.items ?? []).length === 0 ? (
                 <div className="px-5 py-8 text-center text-sm text-black/60">No ranking data in this range yet.</div>
               ) : (
                 leaderboard?.items.map((item) => (
-                  <div key={`${item.rank}-${item.name}`} className="grid grid-cols-4 px-5 py-3 text-sm text-black">
+                  <div key={`${item.rank}-${item.name}`} className="grid grid-cols-3 px-5 py-3 text-sm text-black">
                     <span>#{item.rank}</span>
                     <span>{item.name}</span>
                     <span>{formatDuration(item.duration_minutes)}</span>
-                    <span className="text-black/60">{item.diff_from_prev_minutes > 0 ? `${item.diff_from_prev_minutes}m` : "-"}</span>
                   </div>
                 ))
               )}
