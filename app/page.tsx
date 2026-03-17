@@ -24,6 +24,7 @@ type HeatmapCell = {
   date: string;
   hour: number;
   value: number;
+  color: string;
 };
 
 type HeatmapResponse = {
@@ -66,15 +67,6 @@ function formatDuration(minutes: number): string {
   return `${h}h ${m}m`;
 }
 
-function getHeatColor(value: number): string {
-  const clamped = Math.max(0, Math.min(value, 12));
-  const ratio = clamped / 12;
-  const red = Math.round(167 + (248 - 167) * ratio);
-  const green = Math.round(243 + (180 - 243) * ratio);
-  const blue = Math.round(208 + (180 - 208) * ratio);
-  return `rgb(${red} ${green} ${blue})`;
-}
-
 export default function Home() {
   const [people, setPeople] = useState<Person[]>([]);
   const [leaderboardRange, setLeaderboardRange] = useState<"today" | "week" | "month">("today");
@@ -114,15 +106,16 @@ export default function Home() {
   }).format(new Date());
 
   const dailyHeat = useMemo(() => {
-    const values = (heatmap?.cells ?? []).reduce<Record<string, number>>((acc, cell) => {
-      acc[cell.date] = cell.value;
+    const values = (heatmap?.cells ?? []).reduce<Record<string, { value: number; color: string }>>((acc, cell) => {
+      acc[cell.date] = { value: cell.value, color: cell.color };
       return acc;
     }, {});
     const [year, month] = heatmapMonth.split("-").map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     return Array.from({ length: daysInMonth }, (_, i) => {
       const date = `${heatmapMonth}-${String(i + 1).padStart(2, "0")}`;
-      return { date, value: Number((values[date] ?? 0).toFixed(2)) };
+      const dayValue = values[date] ?? { value: 0, color: "#b7ebc0" };
+      return { date, value: Number(dayValue.value.toFixed(2)), color: dayValue.color };
     });
   }, [heatmap, heatmapMonth]);
 
@@ -219,12 +212,12 @@ export default function Home() {
         </section>
 
         <section className="rounded-3xl border border-black/10 bg-white/80 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.6)] backdrop-blur">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-xl font-semibold text-black">Presence Heatmap</h2>
             <select
               value={heatmapMonth}
               onChange={(e) => setHeatmapMonth(e.target.value)}
-              className="rounded-lg border border-black/15 bg-white px-3 py-1 text-sm text-black"
+              className="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm text-black sm:w-auto sm:py-1"
             >
               {monthOptions.map((month) => (
                 <option key={month} value={month}>
@@ -233,15 +226,16 @@ export default function Home() {
               ))}
             </select>
           </div>
-          <div className="overflow-auto rounded-2xl border border-black/10 bg-white p-4">
-            <div className="grid min-w-[760px] grid-cols-7 gap-2 text-xs">
+          <div className="overflow-auto rounded-2xl border border-black/10 bg-white p-2 sm:p-4">
+            <div className="grid grid-cols-7 gap-1 text-[10px] sm:gap-2 sm:text-xs">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((week) => (
                 <div key={week} className="pb-1 text-center font-medium text-black/50">
-                  {week}
+                  <span className="sm:hidden">{week.slice(0, 1)}</span>
+                  <span className="hidden sm:inline">{week}</span>
                 </div>
               ))}
               {Array.from({ length: firstDayOffset }, (_, idx) => (
-                <div key={`blank-${idx}`} className="h-20 rounded-md bg-transparent" />
+                <div key={`blank-${idx}`} className="h-14 rounded-md bg-transparent sm:h-20" />
               ))}
               {dailyHeat.map((day) => (
                 <button
@@ -249,13 +243,13 @@ export default function Home() {
                   key={day.date}
                   title={`${day.date} • ${day.value.toFixed(2)} avg hours/person`}
                   onClick={() => setSelectedDate((prev) => (prev === day.date ? null : day.date))}
-                  className={`flex h-20 flex-col justify-between rounded-md border p-2 text-left ${
+                  className={`flex h-14 flex-col justify-between rounded-md border p-1.5 text-left sm:h-20 sm:p-2 ${
                     selectedDate === day.date ? "border-black/30" : "border-black/5"
                   }`}
-                  style={{ backgroundColor: getHeatColor(day.value) }}
+                  style={{ backgroundColor: day.color }}
                 >
-                  <span className="text-xs font-semibold text-black/80">{day.date.slice(-2)}</span>
-                  <span className="text-[11px] text-black/70">{day.value.toFixed(2)}</span>
+                  <span className="text-[11px] font-semibold text-black/80 sm:text-xs">{day.date.slice(-2)}</span>
+                  <span className="hidden text-[11px] text-black/70 sm:block">{day.value.toFixed(2)}</span>
                 </button>
               ))}
             </div>
