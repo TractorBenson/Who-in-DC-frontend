@@ -107,8 +107,32 @@ export default function Home() {
   }).format(new Date());
 
   const maxHeatValue = useMemo(
-    () => Math.max(...(heatmap?.cells.map((cell) => cell.value) ?? [0])),
+    () =>
+      Math.max(
+        ...(Object.values(
+          (heatmap?.cells ?? []).reduce<Record<string, number>>((acc, cell) => {
+            acc[cell.date] = (acc[cell.date] ?? 0) + cell.value;
+            return acc;
+          }, {}),
+        ) ?? [0]),
+      ),
     [heatmap],
+  );
+
+  const dailyHeat = useMemo(() => {
+    const totals = (heatmap?.cells ?? []).reduce<Record<string, number>>((acc, cell) => {
+      acc[cell.date] = (acc[cell.date] ?? 0) + cell.value;
+      return acc;
+    }, {});
+    return Object.entries(totals)
+      .map(([date, value]) => ({ date, value: Number(value.toFixed(2)) }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [heatmap]);
+
+  const firstDayOffset = dailyHeat.length > 0 ? new Date(`${dailyHeat[0].date}T00:00:00`).getDay() : 0;
+  const busiestDay = dailyHeat.reduce<{ date: string; value: number } | null>(
+    (best, day) => (!best || day.value > best.value ? day : best),
+    null,
   );
 
   const myCard = leaderboard?.items[0];
@@ -207,35 +231,29 @@ export default function Home() {
             </div>
           </div>
           <div className="mb-4 rounded-xl bg-black/5 px-4 py-3 text-sm text-black/70">
-            {heatmap?.summary.hottest_slot
-              ? `Hottest slot: ${heatmap.summary.hottest_slot} • Avg ${heatmap.summary.avg_online} online • Peak ${heatmap.summary.peak_online}`
+            {busiestDay
+              ? `Busiest day: ${busiestDay.date} • Daily intensity ${busiestDay.value.toFixed(2)}`
               : "Heatmap will appear when data accumulates."}
           </div>
           <div className="overflow-auto rounded-2xl border border-black/10 bg-white p-4">
-            <div className="grid min-w-[920px] grid-cols-[120px_repeat(24,minmax(26px,1fr))] gap-1 text-[11px]">
-              <div />
-              {Array.from({ length: 24 }, (_, i) => (
-                <div key={`hour-${i}`} className="text-center text-black/50">
-                  {i}
+            <div className="grid min-w-[760px] grid-cols-7 gap-2 text-xs">
+              {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((week) => (
+                <div key={week} className="pb-1 text-center font-medium text-black/50">
+                  {week}
                 </div>
               ))}
-              {Array.from(new Set((heatmap?.cells ?? []).map((cell) => cell.date))).map((date) => (
-                <>
-                  <div key={`date-label-${date}`} className="pr-2 text-right text-black/60">
-                    {date}
-                  </div>
-                  {Array.from({ length: 24 }, (_, hour) => {
-                    const cell = heatmap?.cells.find((entry) => entry.date === date && entry.hour === hour);
-                    const value = cell?.value ?? 0;
-                    return (
-                      <div
-                        key={`${date}-${hour}`}
-                        title={`${date} ${hour}:00 • ${value}`}
-                        className={`h-5 rounded ${getHeatColor(value, maxHeatValue)}`}
-                      />
-                    );
-                  })}
-                </>
+              {Array.from({ length: firstDayOffset }, (_, idx) => (
+                <div key={`blank-${idx}`} className="h-20 rounded-md bg-transparent" />
+              ))}
+              {dailyHeat.map((day) => (
+                <div
+                  key={day.date}
+                  title={`${day.date} • ${day.value.toFixed(2)} daily intensity`}
+                  className={`flex h-20 flex-col justify-between rounded-md border border-black/5 p-2 ${getHeatColor(day.value, maxHeatValue)}`}
+                >
+                  <span className="text-xs font-semibold text-black/80">{day.date.slice(-2)}</span>
+                  <span className="text-[11px] text-black/70">{day.value.toFixed(2)}</span>
+                </div>
               ))}
             </div>
           </div>
