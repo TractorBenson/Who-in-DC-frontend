@@ -148,7 +148,11 @@ export default function Home() {
         <section className="rounded-3xl border border-black/10 bg-white/80 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.6)] backdrop-blur">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="text-xl font-semibold text-black">Current Presence</h2>
-            <div className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+            <div
+              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                activeCount > 0 ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+              }`}
+            >
               {activeCount} people in DC
             </div>
           </div>
