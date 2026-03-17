@@ -27,8 +27,9 @@ type HeatmapCell = {
 };
 
 type HeatmapResponse = {
-  range: "7d" | "30d";
-  bucket: "hour";
+  month: string;
+  available_months: string[];
+  bucket: "day";
   generated_at: string;
   cells: HeatmapCell[];
   summary: {
@@ -40,6 +41,11 @@ type HeatmapResponse = {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://widc-api.20age1million.com";
 const TORONTO_TZ = "America/Toronto";
+const CURRENT_MONTH = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric",
+  month: "2-digit",
+  timeZone: TORONTO_TZ,
+}).format(new Date());
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
@@ -71,7 +77,7 @@ function getHeatColor(value: number, maxValue: number): string {
 export default function Home() {
   const [people, setPeople] = useState<Person[]>([]);
   const [leaderboardRange, setLeaderboardRange] = useState<"today" | "week" | "month">("today");
-  const [heatmapRange, setHeatmapRange] = useState<"7d" | "30d">("7d");
+  const [heatmapMonth, setHeatmapMonth] = useState(CURRENT_MONTH);
   const [leaderboard, setLeaderboard] = useState<LeaderboardResponse | null>(null);
   const [heatmap, setHeatmap] = useState<HeatmapResponse | null>(null);
   const [error, setError] = useState("");
@@ -83,7 +89,7 @@ export default function Home() {
         const [peopleRes, boardRes, heatRes] = await Promise.all([
           fetch(`${API_BASE}/get-people`, { cache: "no-store" }),
           fetch(`${API_BASE}/leaderboard?range=${leaderboardRange}&limit=50`, { cache: "no-store" }),
-          fetch(`${API_BASE}/heatmap?range=${heatmapRange}&bucket=hour`, { cache: "no-store" }),
+          fetch(`${API_BASE}/heatmap?month=${heatmapMonth}&bucket=day`, { cache: "no-store" }),
         ]);
 
         setPeople(peopleRes.ok ? ((await peopleRes.json()) as Person[]) : []);
@@ -95,7 +101,7 @@ export default function Home() {
     };
 
     load();
-  }, [leaderboardRange, heatmapRange]);
+  }, [leaderboardRange, heatmapMonth]);
 
   const updatedAt = new Intl.DateTimeFormat("en-US", {
     month: "short",
@@ -106,35 +112,28 @@ export default function Home() {
   }).format(new Date());
 
   const maxHeatValue = useMemo(
-    () =>
-      Math.max(
-        ...(Object.values(
-          (heatmap?.cells ?? []).reduce<Record<string, number>>((acc, cell) => {
-            acc[cell.date] = (acc[cell.date] ?? 0) + cell.value;
-            return acc;
-          }, {}),
-        ) ?? [0]),
-      ),
+    () => Math.max(...((heatmap?.cells ?? []).map((cell) => cell.value) ?? [0])),
     [heatmap],
   );
 
   const dailyHeat = useMemo(() => {
-    const totals = (heatmap?.cells ?? []).reduce<Record<string, number>>((acc, cell) => {
-      acc[cell.date] = (acc[cell.date] ?? 0) + cell.value;
+    const values = (heatmap?.cells ?? []).reduce<Record<string, number>>((acc, cell) => {
+      acc[cell.date] = cell.value;
       return acc;
     }, {});
-    return Object.entries(totals)
-      .map(([date, value]) => ({ date, value: Number(value.toFixed(2)) }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [heatmap]);
+    const [year, month] = heatmapMonth.split("-").map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => {
+      const date = `${heatmapMonth}-${String(i + 1).padStart(2, "0")}`;
+      return { date, value: Number((values[date] ?? 0).toFixed(2)) };
+    });
+  }, [heatmap, heatmapMonth]);
 
-  const firstDayOffset = dailyHeat.length > 0 ? new Date(`${dailyHeat[0].date}T00:00:00`).getDay() : 0;
+  const firstDayOffset = dailyHeat.length > 0 ? new Date(`${heatmapMonth}-01T00:00:00`).getDay() : 0;
   const busiestDay = dailyHeat.reduce<{ date: string; value: number } | null>(
-    (best, day) => (!best || day.value > best.value ? day : best),
+    (best, day) => (day.value > 0 && (!best || day.value > best.value) ? day : best),
     null,
   );
-
-  const myCard = leaderboard?.items[0];
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#f2e9ff_0%,_#fdf6e9_35%,_#f6f8ff_70%,_#ffffff_100%)]">
@@ -187,9 +186,6 @@ export default function Home() {
               ))}
             </div>
           </div>
-          <div className="mb-4 rounded-xl bg-black/5 px-4 py-3 text-sm text-black/70">
-            {myCard ? `Current #1: ${myCard.name} • ${formatDuration(myCard.duration_minutes)}` : "No leaderboard data yet."}
-          </div>
           <div className="overflow-hidden rounded-2xl border border-black/10 bg-white">
             <div className="grid grid-cols-3 border-b border-black/10 bg-black/5 px-5 py-3 text-sm font-semibold text-black/70">
               <span>Rank</span>
@@ -215,21 +211,21 @@ export default function Home() {
         <section className="rounded-3xl border border-black/10 bg-white/80 p-6 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.6)] backdrop-blur">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-semibold text-black">Presence Heatmap</h2>
-            <div className="flex gap-2">
-              {(["7d", "30d"] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setHeatmapRange(r)}
-                  className={`rounded-full px-3 py-1 text-sm ${heatmapRange === r ? "bg-black text-white" : "bg-black/5 text-black/70"}`}
-                >
-                  {r}
-                </button>
+            <select
+              value={heatmapMonth}
+              onChange={(e) => setHeatmapMonth(e.target.value)}
+              className="rounded-lg border border-black/15 bg-white px-3 py-1 text-sm text-black"
+            >
+              {[...new Set([heatmapMonth, ...(heatmap?.available_months ?? [CURRENT_MONTH])])].map((month) => (
+                <option key={month} value={month}>
+                  {month}
+                </option>
               ))}
-            </div>
+            </select>
           </div>
           <div className="mb-4 rounded-xl bg-black/5 px-4 py-3 text-sm text-black/70">
             {busiestDay
-              ? `Busiest day: ${busiestDay.date} • Daily intensity ${busiestDay.value.toFixed(2)}`
+              ? `Busiest day: ${busiestDay.date} • Avg hours/person ${busiestDay.value.toFixed(2)}`
               : "Heatmap will appear when data accumulates."}
           </div>
           <div className="overflow-auto rounded-2xl border border-black/10 bg-white p-4">
@@ -245,7 +241,7 @@ export default function Home() {
               {dailyHeat.map((day) => (
                 <div
                   key={day.date}
-                  title={`${day.date} • ${day.value.toFixed(2)} daily intensity`}
+                  title={`${day.date} • ${day.value.toFixed(2)} avg hours/person`}
                   className={`flex h-20 flex-col justify-between rounded-md border border-black/5 p-2 ${getHeatColor(day.value, maxHeatValue)}`}
                 >
                   <span className="text-xs font-semibold text-black/80">{day.date.slice(-2)}</span>
